@@ -6527,6 +6527,14 @@ Sigma_Exit:
 			if (code_seen(axis_codes[i]))
 			{
 				float val = code_value();
+
+#ifdef NORMAL_MAX_FEEDRATE_Z
+				if ((i == Z_AXIS) && (val > NORMAL_MAX_FEEDRATE_Z))
+				{
+					val = NORMAL_MAX_FEEDRATE_Z;
+				}
+#endif // NORMAL_MAX_FEEDRATE_Z
+
 #ifdef TMC2130
 				float val_silent = val;
 				if ((i == X_AXIS) || (i == Y_AXIS))
