@@ -1,0 +1,1 @@
+mklink Configuration_Prusa.h c:\users\nwint\Documents\Github\Prusa-Firmware\Firmware\variants\1_75mm_WilsonTSMK3S-EINSY10a-E3Dv6full.h 
