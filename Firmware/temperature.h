@@ -27,6 +27,8 @@
   #include "stepper.h"
 #endif
 
+#include "config.h"
+
 
 #ifdef SYSTEM_TIMER_2
 
@@ -74,10 +76,15 @@ extern int current_voltage_raw_pwr;
 extern int current_voltage_raw_bed;
 #endif
 
+#if IR_SENSOR_ANALOG
+extern int current_voltage_raw_IR;
+#endif //IR_SENSOR_ANALOG
 
 #if defined(CONTROLLERFAN_PIN) && CONTROLLERFAN_PIN > -1
   extern unsigned char soft_pwm_bed;
 #endif
+
+extern bool bedPWMDisabled;
 
 #ifdef PIDTEMP
   extern int pid_cycle, pid_number_of_cycles;
@@ -241,6 +248,7 @@ void checkExtruderAutoFans();
 
 enum { 
 	EFCE_OK = 0,   //!< normal operation, both fans are ok
+	EFCE_FIXED,    //!< previous fan error was fixed
 	EFCE_DETECTED, //!< fan error detected, but not reported yet
 	EFCE_REPORTED  //!< fan error detected and reported to LCD and serial
 };

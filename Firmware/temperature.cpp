@@ -44,6 +44,8 @@
 #include "Timer.h"
 #include "Configuration_prusa.h"
 
+#include "config.h"
+
 //===========================================================================
 //=============================public variables============================
 //===========================================================================
@@ -70,6 +72,10 @@ int current_voltage_raw_pwr = 0;
 #ifdef VOLT_BED_PIN
 int current_voltage_raw_bed = 0;
 #endif
+
+#if IR_SENSOR_ANALOG
+int current_voltage_raw_IR = 0;
+#endif //IR_SENSOR_ANALOG
 
 int current_temperature_bed_raw = 0;
 float current_temperature_bed = 0.0;
@@ -503,14 +509,17 @@ void checkFanSpeed()
 	// drop the fan_check_error flag when both fans are ok
 	if( fan_speed_errors[0] == 0 && fan_speed_errors[1] == 0 && fan_check_error == EFCE_REPORTED){
 		// we may even send some info to the LCD from here
-		fan_check_error = EFCE_OK;
+		fan_check_error = EFCE_FIXED;
 	}
-
-	if ((fan_speed_errors[0] > max_extruder_fan_errors) && fans_check_enabled) {
+	if ((fan_check_error == EFCE_FIXED) && !PRINTER_ACTIVE){
+		fan_check_error = EFCE_OK; //if the issue is fixed while the printer is doing nothing, reenable processing immediately.
+		lcd_reset_alert_level(); //for another fan speed error
+	}
+	if ((fan_speed_errors[0] > max_extruder_fan_errors) && fans_check_enabled && (fan_check_error == EFCE_OK)) {
 		fan_speed_errors[0] = 0;
 		fanSpeedError(0); //extruder fan
 	}
-	if ((fan_speed_errors[1] > max_print_fan_errors) && fans_check_enabled) {
+	if ((fan_speed_errors[1] > max_print_fan_errors) && fans_check_enabled && (fan_check_error == EFCE_OK)) {
 		fan_speed_errors[1] = 0;
 		fanSpeedError(1); //print fan
 	}
@@ -529,31 +538,31 @@ static void fanSpeedErrorBeep(const char *serialMsg, const char *lcdMsg){
 }
 
 void fanSpeedError(unsigned char _fan) {
-	if (get_message_level() != 0 && isPrintPaused) return; 
-	//to ensure that target temp. is not set to zero in case taht we are resuming print 
+	if (get_message_level() != 0 && isPrintPaused) return;
+	//to ensure that target temp. is not set to zero in case that we are resuming print
 	if (card.sdprinting || is_usb_printing) {
 		if (heating_status != 0) {
 			lcd_print_stop();
 		}
 		else {
-			fan_check_error = EFCE_DETECTED;
+			fan_check_error = EFCE_DETECTED; //plans error for next processed command
 		}
 	}
 	else {
-			SERIAL_PROTOCOLLNRPGM(MSG_OCTOPRINT_PAUSE); //for octoprint
-			setTargetHotend0(0);
-      heating_status = 0;
-      fan_check_error = EFCE_REPORTED;
+		// SERIAL_PROTOCOLLNRPGM(MSG_OCTOPRINT_PAUSED); //Why pause octoprint? is_usb_printing would be true in that case, so there is no need for this.
+		setTargetHotend0(0);
+        heating_status = 0;
+        fan_check_error = EFCE_REPORTED;
 	}
 	switch (_fan) {
 	case 0:	// extracting the same code from case 0 and case 1 into a function saves 72B
-		fanSpeedErrorBeep(PSTR("Extruder fan speed is lower than expected"), PSTR("Err: EXTR. FAN ERROR") );
+		fanSpeedErrorBeep(PSTR("Extruder fan speed is lower than expected"), MSG_FANCHECK_EXTRUDER);
 		break;
 	case 1:
-		fanSpeedErrorBeep(PSTR("Print fan speed is lower than expected"), PSTR("Err: PRINT FAN ERROR") );
+		fanSpeedErrorBeep(PSTR("Print fan speed is lower than expected"), MSG_FANCHECK_PRINT);
 		break;
 	}
-  SERIAL_PROTOCOLLNRPGM(MSG_OK);
+    // SERIAL_PROTOCOLLNRPGM(MSG_OK); //This ok messes things up with octoprint.
 }
 #endif //(defined(TACH_0) && TACH_0 >-1) || (defined(TACH_1) && TACH_1 > -1)
 
@@ -870,7 +879,7 @@ static float analog2temp(int raw, uint8_t e) {
       SERIAL_ERROR_START;
       SERIAL_ERROR((int)e);
       SERIAL_ERRORLNPGM(" - Invalid extruder number !");
-      kill(PSTR(""), 6);
+      kill(NULL, 6);
       return 0.0;
   } 
   #ifdef HEATER_0_USES_MAX6675
@@ -1394,6 +1403,7 @@ void disable_heater()
     target_temperature_bed=0;
     soft_pwm_bed=0;
 	timer02_set_pwm0(soft_pwm_bed << 1);
+	bedPWMDisabled = 0;
     #if defined(HEATER_BED_PIN) && HEATER_BED_PIN > -1
       //WRITE(HEATER_BED_PIN,LOW);
     #endif
@@ -1565,17 +1575,22 @@ extern "C" {
 void adc_ready(void) //callback from adc when sampling finished
 {
 	current_temperature_raw[0] = adc_values[ADC_PIN_IDX(TEMP_0_PIN)]; //heater
+#ifdef PINDA_THERMISTOR
 	current_temperature_raw_pinda_fast = adc_values[ADC_PIN_IDX(TEMP_PINDA_PIN)];
+#endif //PINDA_THERMISTOR
 	current_temperature_bed_raw = adc_values[ADC_PIN_IDX(TEMP_BED_PIN)];
 #ifdef VOLT_PWR_PIN
 	current_voltage_raw_pwr = adc_values[ADC_PIN_IDX(VOLT_PWR_PIN)];
 #endif
 #ifdef AMBIENT_THERMISTOR
-	current_temperature_raw_ambient = adc_values[ADC_PIN_IDX(TEMP_AMBIENT_PIN)];
+	current_temperature_raw_ambient = adc_values[ADC_PIN_IDX(TEMP_AMBIENT_PIN)]; // 5->6
 #endif //AMBIENT_THERMISTOR
 #ifdef VOLT_BED_PIN
 	current_voltage_raw_bed = adc_values[ADC_PIN_IDX(VOLT_BED_PIN)]; // 6->9
 #endif
+#if IR_SENSOR_ANALOG
+     current_voltage_raw_IR = adc_values[ADC_PIN_IDX(VOLT_IR_PIN)];
+#endif //IR_SENSOR_ANALOG
 	temp_meas_ready = true;
 }
 
@@ -1988,6 +2003,8 @@ void check_max_temp()
 //! number of repeating the same state with consecutive step() calls
 //! used to slow down text switching
 struct alert_automaton_mintemp {
+	const char *m2;
+	alert_automaton_mintemp(const char *m2):m2(m2){}
 private:
 	enum { ALERT_AUTOMATON_SPEED_DIV = 5 };
 	enum class States : uint8_t { Init = 0, TempAboveMintemp, ShowPleaseRestart, ShowMintemp };
@@ -2007,7 +2024,6 @@ public:
 	//! @param current_temp current hotend/bed temperature (for computing simple hysteresis)
 	//! @param mintemp minimal temperature including hysteresis to check current_temp against
 	void step(float current_temp, float mintemp){
-		static const char m2[] PROGMEM = "MINTEMP fixed";
 		static const char m1[] PROGMEM = "Please restart";
 		switch(state){
 		case States::Init: // initial state - check hysteresis
@@ -2035,8 +2051,9 @@ public:
 		}
 	}
 };
-
-static alert_automaton_mintemp alert_automaton_hotend, alert_automaton_bed;
+static const char m2hotend[] PROGMEM = "MINTEMP HOTEND fixed";
+static const char m2bed[] PROGMEM = "MINTEMP BED fixed";
+static alert_automaton_mintemp alert_automaton_hotend(m2hotend), alert_automaton_bed(m2bed);
 
 void check_min_temp_heater0()
 {
